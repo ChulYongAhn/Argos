@@ -1,0 +1,10 @@
+# Google Credentials - NEVER commit these!
+credentials.json
+*_credentials.json
+
+# Except template
+!credentials_template.json
+
+# Cache
+__pycache__/
+*.pyc

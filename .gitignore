@@ -205,3 +205,20 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# API Keys and Secrets - IMPORTANT: Never commit these!
+*.key
+*.pem
+credentials.json
+secrets.yaml
+config.ini
+.env.local
+.env.*.local
+
+# Trading specific files
+trading_data/
+backtest_results/
+trade_history/
+*.csv
+portfolio.json
+wallets.json
