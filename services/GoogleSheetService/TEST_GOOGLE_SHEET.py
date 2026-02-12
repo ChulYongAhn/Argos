@@ -3,12 +3,23 @@
 simple_google_sheet을 사용한 범용 기록 테스트
 """
 
-from simple_google_sheet import record, record_dict, get_sheet
+from simple_google_sheet import record, record_dict, SimpleGoogleSheet
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 import time
+
+# .env 파일 로드
+load_dotenv()
 
 def test_google_sheet():
     """구글 시트 범용 기록 테스트"""
+
+    # .env에서 시트 ID 가져오기 (GOOGLE_SHEET_ID_1 사용)
+    sheet_id = os.getenv('GOOGLE_SHEET_ID_1')
+    if not sheet_id:
+        print("❌ GOOGLE_SHEET_ID_1이 .env 파일에 설정되어 있지 않습니다.")
+        return
 
     print("=" * 50)
     print("🚀 구글 시트 테스트 시작")
@@ -16,38 +27,38 @@ def test_google_sheet():
 
     # 1. 가변 인자 테스트 - 원하는 만큼 인자 전달
     print("\n[테스트 1: 가변 인자]")
-    record("테스트1")
-    record("테스트2", "데이터A")
-    record("테스트3", "데이터A", "데이터B")
-    record("테스트4", "데이터A", "데이터B", "데이터C")
-    record("테스트5", "A", "B", "C", "D", "E", "F", "G")
+    record(sheet_id, "테스트1")
+    record(sheet_id, "테스트2", "데이터A")
+    record(sheet_id, "테스트3", "데이터A", "데이터B")
+    record(sheet_id, "테스트4", "데이터A", "데이터B", "데이터C")
+    record(sheet_id, "테스트5", "A", "B", "C", "D", "E", "F", "G")
     print("✅ 가변 인자 테스트 완료")
 
     time.sleep(1)
 
     # 2. 거래 시뮬레이션
     print("\n[테스트 2: 거래 기록]")
-    record("매수", "비트코인", "KRW-BTC", 140000000, 0.001, 140000)
-    record("매도", "비트코인", "KRW-BTC", 145000000, 0.001, 145000, "+3.6%", "+5000")
-    record("매수", "이더리움", "KRW-ETH", 5000000, 0.1, 500000)
-    record("매도", "이더리움", "KRW-ETH", 4800000, 0.1, 480000, "-4.0%", "-20000")
+    record(sheet_id, "매수", "비트코인", "KRW-BTC", 140000000, 0.001, 140000)
+    record(sheet_id, "매도", "비트코인", "KRW-BTC", 145000000, 0.001, 145000, "+3.6%", "+5000")
+    record(sheet_id, "매수", "이더리움", "KRW-ETH", 5000000, 0.1, 500000)
+    record(sheet_id, "매도", "이더리움", "KRW-ETH", 4800000, 0.1, 480000, "-4.0%", "-20000")
     print("✅ 거래 기록 완료")
 
     time.sleep(1)
 
     # 3. 시스템 로그
     print("\n[테스트 3: 시스템 로그]")
-    record("시스템", "시작", "Argos v1.0")
-    record("API", "연결", "업비트", "성공")
-    record("에러", "API", "Rate limit", "429", "1분 대기")
-    record("알림", "슬랙", "메시지 전송", "성공")
+    record(sheet_id, "시스템", "시작", "Argos v1.0")
+    record(sheet_id, "API", "연결", "업비트", "성공")
+    record(sheet_id, "에러", "API", "Rate limit", "429", "1분 대기")
+    record(sheet_id, "알림", "슬랙", "메시지 전송", "성공")
     print("✅ 시스템 로그 완료")
 
     time.sleep(1)
 
     # 4. 딕셔너리 기록 (헤더 자동 관리)
     print("\n[테스트 4: 딕셔너리 기록]")
-    record_dict({
+    record_dict(sheet_id, {
         "종목": "리플",
         "심볼": "KRW-XRP",
         "거래": "매수",
@@ -56,7 +67,7 @@ def test_google_sheet():
         "금액": 350000
     })
 
-    record_dict({
+    record_dict(sheet_id, {
         "종목": "솔라나",
         "심볼": "KRW-SOL",
         "거래": "매도",
@@ -68,7 +79,7 @@ def test_google_sheet():
     })
 
     # 새로운 필드 추가 테스트
-    record_dict({
+    record_dict(sheet_id, {
         "종목": "카르다노",
         "심볼": "KRW-ADA",
         "거래": "매수",
@@ -82,12 +93,12 @@ def test_google_sheet():
 
     # 5. 일일 요약
     print("\n[테스트 5: 일일 요약]")
-    record("="*20, "일일 요약", "="*20)
-    record("거래횟수", "15", "승률", "60%", "수익금", "+125,000원")
+    record(sheet_id, "="*20, "일일 요약", "="*20)
+    record(sheet_id, "거래횟수", "15", "승률", "60%", "수익금", "+125,000원")
     print("✅ 일일 요약 완료")
 
     # URL 출력
-    sheet = get_sheet()
+    sheet = SimpleGoogleSheet(sheet_id=sheet_id)
     print(f"\n📱 구글 시트 URL: {sheet.get_sheet_url()}")
     print("✅ 구글 시트에서 확인하세요!")
 
