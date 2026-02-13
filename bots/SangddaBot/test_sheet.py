@@ -8,7 +8,7 @@ from datetime import datetime
 # Argos 루트 경로를 Python 경로에 추가
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.GoogleSheetService import SimpleGoogleSheet
+from services.SimpleGoogleSheetService import SimpleGoogleSheet
 from dotenv import load_dotenv
 
 # .env 파일 로드
