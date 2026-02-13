@@ -2,9 +2,15 @@
 credentials.json
 *_credentials.json
 
-# Except template
-!credentials_template.json
-
 # Cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

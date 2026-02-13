@@ -16,6 +16,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 # 공통 서비스 import
 from services.SlackService import slack
+from services.SimpleGoogleSheetService import SimpleGoogleSheet
+from services.DartService import get_dart
 
 # .env 파일 로드
 load_dotenv()
@@ -29,6 +31,28 @@ class SangddaBot:
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
         self.csv_path = os.path.join(self.current_dir, 'kosdaq_top_companies.csv')
         self.slack_webhook = os.getenv('SLACK_WEBHOOK')
+        self.sheet_id = os.getenv('GOOGLE_SHEET_ID_3')  # 상한가 시트 ID
+        self.sheet_name = os.getenv('GOOGLE_SHEET_NAME_3', '상한가')  # 상한가 시트명 (기본값: 상한가)
+
+        # 구글 시트 서비스 초기화
+        if self.sheet_id:
+            # GoogleSheetService 폴더의 credentials.json 사용
+            cred_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                'services', 'GoogleSheetService', 'credentials.json'
+            )
+            # 환경변수에서 지정한 시트명 사용
+            self.sheet_service = SimpleGoogleSheet(
+                sheet_id=self.sheet_id,
+                credentials_file=cred_path,
+                sheet_name=self.sheet_name
+            )
+            if self.sheet_service.enabled:
+                print(f"✅ 구글 시트 연결 성공: {self.sheet_service.spreadsheet.title}")
+            else:
+                print("❌ 구글 시트 연결 실패")
+        else:
+            self.sheet_service = None
 
     def get_latest_trading_day(self):
         """최근 거래일 구하기 (저녁 8시 실행 기준)"""
@@ -119,6 +143,61 @@ class SangddaBot:
             print(f"❌ CSV 로드 실패: {e}")
             return None
 
+    def get_recent_disclosures(self, corp_name, ticker=None, days=15):
+        """특정 기업의 최근 공시 조회 (모든 공시)"""
+        try:
+            # DART 서비스 초기화
+            dart = get_dart()
+
+            # 기간 설정
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+
+            # 코스닥 전체 공시 조회 (여러 페이지)
+            all_disclosures = []
+            for page in range(1, 3):  # 2페이지까지 (200개)
+                result = dart.get_disclosures(
+                    bgn_de=start_date.strftime('%Y%m%d'),
+                    end_de=end_date.strftime('%Y%m%d'),
+                    corp_cls='K',  # 코스닥
+                    page_no=page,
+                    page_count=100
+                )
+                if result.get('status') == '000':
+                    all_disclosures.extend(result.get('list', []))
+                else:
+                    break
+
+            if not all_disclosures:
+                return []
+
+            # 회사명 또는 종목코드로 필터링
+            disclosures = []
+            for disc in all_disclosures:
+                disc_corp_name = disc.get('corp_name', '')
+                disc_stock_code = disc.get('stock_code', '')
+
+                # 회사명 매칭 (부분 일치) 또는 종목코드 매칭
+                matched = False
+                if ticker and disc_stock_code == ticker:
+                    matched = True
+                elif corp_name in disc_corp_name:
+                    matched = True
+
+                if matched:
+                    disclosures.append({
+                        'date': disc.get('rcept_dt', ''),
+                        'title': disc.get('report_nm', ''),
+                        'link': f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={disc.get('rcept_no', '')}"
+                    })
+
+            # 최근 3개만 반환
+            return disclosures[:3]
+
+        except Exception as e:
+            print(f"   ⚠️ DART 공시 조회 실패: {e}")
+            return []
+
     def find_limit_up_stocks(self):
         """상한가 종목 찾기"""
         # 기업 목록 로드
@@ -166,15 +245,19 @@ class SangddaBot:
 
                 # 상한가 체크
                 if self.is_limit_up(prev_close, current_price):
-                    # 5거래일 이력
+                    # 10거래일 이력
                     history = self.get_price_history(ticker, target_date)
+
+                    # DART 공시 조회 (모든 공시) - 종목코드도 함께 전달
+                    disclosures = self.get_recent_disclosures(name, ticker=ticker)
 
                     limit_up_stocks.append({
                         'ticker': ticker,
                         'name': name,
                         'price': current_price,
                         'change_rate': round(change_rate, 2),
-                        'history': history
+                        'history': history,
+                        'disclosures': disclosures
                     })
 
                     print(f"   🔥 상한가 발견!")
@@ -203,19 +286,103 @@ class SangddaBot:
             # 상한가 종목은 불 이모티콘과 볼드 처리
             message += f"🔥 *{stock['name']}({stock['ticker']}) | {stock['price']:,} | +{stock['change_rate']}%*\n"
 
-            # 5거래일 이력
+            # 10거래일 이력
             if stock['history']:
                 history_str = " | ".join([f"D-{i+1}: {'+' if h > 0 else ''}{h}%"
                                          for i, h in enumerate(stock['history'])])
                 message += f"└ {history_str}\n"
 
+            # DART 공시 정보 (모든 공시)
+            if stock.get('disclosures'):
+                for disc in stock['disclosures']:
+                    date_str = disc['date'][4:6] + '/' + disc['date'][6:8] if disc['date'] else ''
+                    # 공시 종류에 따라 아이콘 구분
+                    icon = "📢"
+                    if any(keyword in disc['title'] for keyword in ["단기과열", "투자위험", "거래정지", "관리종목"]):
+                        icon = "⚠️"
+                    elif any(keyword in disc['title'] for keyword in ["실적", "매출", "계약", "수주", "공급"]):
+                        icon = "💰"
+
+                    # 슬랙 웹훅은 링크를 지원하지 않으므로 텍스트와 URL을 함께 표시
+                    message += f"└ {icon} {date_str} {disc['title']}\n"
+                    if disc.get('link'):
+                        message += f"   {disc['link']}\n"
+
             message += "\n"
 
         message += f"총 {len(stocks)}개 종목\n"
-        message += "※ D-1 = 직전 거래일, D-10 = 10거래일전"
+        message += "※ D-1 = 직전 거래일, D-10 = 10거래일전\n\n"
+
+        # 구글 시트 링크 추가 (슬랙 웹훅은 링크를 지원하지 않으므로 URL 직접 표시)
+        if self.sheet_id:
+            sheet_url = f"https://docs.google.com/spreadsheets/d/{self.sheet_id}"
+            message += f"📊 구글 시트: {sheet_url}"
 
         return message
 
+    def write_to_sheet(self, stocks):
+        """구글 시트에 상한가 종목 기록"""
+        if not self.sheet_service or not self.sheet_service.enabled:
+            print("⚠️ 구글 시트가 연결되지 않았습니다.")
+            return
+
+        try:
+            # "상한가" 시트 사용
+            worksheet = self.sheet_service.worksheet
+
+            # 헤더 확인 및 추가
+            all_values = worksheet.get_all_values()
+            if not all_values:
+                headers = ['날짜', '종목명', '종목코드', '종가', '등락률', 'D-1', 'D-2', 'D-3', 'D-4', 'D-5', 'D-6', 'D-7', 'D-8', 'D-9', 'D-10', '공시']
+                worksheet.append_row(headers)
+                # 헤더 굵게
+                worksheet.format('1:1', {'textFormat': {'bold': True}})
+                print(f"✅ '상한가' 시트에 헤더 추가")
+
+            # 데이터 준비 및 추가
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            for stock in stocks:
+                # 공시 정보 정리
+                disclosure_text = ""
+                if stock.get('disclosures'):
+                    disc_list = []
+                    for disc in stock['disclosures'][:2]:  # 최대 2개
+                        disc_list.append(f"{disc['title'][:30]}")
+                    disclosure_text = " / ".join(disc_list)
+
+                # 데이터 준비 (가변 인자로 전달할 데이터들)
+                data_args = [
+                    today,
+                    stock['name'],
+                    stock.get('ticker', ''),
+                    stock.get('price', ''),
+                    f"+{stock['change_rate']}%"
+                ]
+
+                # 10일 이력 추가
+                history = stock.get('history', [])
+                for i in range(10):
+                    if i < len(history):
+                        data_args.append(f"{'+' if history[i] > 0 else ''}{history[i]}%")
+                    else:
+                        data_args.append('')  # 데이터가 없으면 빈칸
+
+                # 공시 정보 추가
+                data_args.append(disclosure_text)
+
+                # append_data 메서드로 가변 인자 전달
+                self.sheet_service.append_data(*data_args)
+
+            if stocks:
+                print(f"✅ 구글 시트 '상한가'에 {len(stocks)}개 종목 기록 완료")
+            else:
+                print("⚠️ 기록할 상한가 종목이 없습니다.")
+
+        except Exception as e:
+            print(f"❌ 구글 시트 기록 실패: {e}")
+            import traceback
+            traceback.print_exc()
 
     def run(self):
         """메인 실행"""
@@ -226,7 +393,11 @@ class SangddaBot:
         # 1. 상한가 종목 찾기
         stocks = self.find_limit_up_stocks()
 
-        # 2. Slack 알림
+        # 2. 구글 시트 기록
+        if stocks:
+            self.write_to_sheet(stocks)
+
+        # 3. Slack 알림
         if stocks or True:  # 상한가가 없어도 알림
             message = self.format_slack_message(stocks)
 

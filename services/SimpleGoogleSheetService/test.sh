@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# GoogleSheetService 테스트 스크립트
-echo "📊 GoogleSheetService 테스트 시작..."
+# SimpleGoogleSheetService 테스트 스크립트
+echo "📊 SimpleGoogleSheetService 테스트 시작..."
 echo "================================"
 
 # 현재 디렉토리 저장
 CURRENT_DIR=$(pwd)
 
-# GoogleSheetService 디렉토리로 이동
+# SimpleGoogleSheetService 디렉토리로 이동
 cd "$(dirname "$0")"
 
 # Python 테스트 실행
