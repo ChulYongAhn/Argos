@@ -6,18 +6,15 @@ Unity 패키지처럼 각 서비스별로 독립된 폴더 구조
 
 # 각 서비스 임포트
 from .SlackService import slack, get_slack
-from .GoogleSheetService import record, record_dict, get_sheet, get_recorder
+from .SimpleGoogleSheetService import Send
 
 __all__ = [
     # Slack Service
     'slack',
     'get_slack',
 
-    # Google Sheet Service
-    'record',
-    'record_dict',
-    'get_sheet',
-    'get_recorder'
+    # Simple Google Sheet Service
+    'Send'
 ]
 
 # 패키지 정보

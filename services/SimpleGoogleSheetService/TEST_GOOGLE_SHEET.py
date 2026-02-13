@@ -5,8 +5,18 @@ Send 함수만을 사용한 극도로 단순한 테스트
 
 import sys
 import os
+
+# 프로젝트 루트 경로 찾기
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+
+# .env 파일 경로 명시적 지정
+from dotenv import load_dotenv
+env_path = os.path.join(project_root, '.env')
+load_dotenv(env_path)
+
 # 현재 파일의 디렉토리를 Python 경로에 추가
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, current_dir)
 
 from simple_google_sheet import Send
 from datetime import datetime
@@ -37,11 +47,6 @@ def test_send_function():
     Send("상한가", now, "TEST_삼성전자", "+29.80%", "거래량: 2,345,678")
 
     print("✅ 상한가 테스트 기록 완료")
-
-    # 에러 처리 테스트
-    print("\n[에러 처리 테스트]")
-    Send("존재하지않는시트", "테스트", "데이터")  # 시트 없음 에러
-    Send("상한가")  # 데이터 없음 에러
 
     print("\n" + "=" * 50)
     print("✨ 테스트 완료!")

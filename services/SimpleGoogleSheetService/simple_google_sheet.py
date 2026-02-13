@@ -26,10 +26,14 @@ class _GoogleSheetManager:
 
     def __init__(self):
         """구글 시트 초기화"""
-        if self._initialized:
+        # 매번 .env 다시 확인
+        sheet_id = os.getenv('GOOGLE_SHEET_ID')
+
+        # 이미 초기화되었고 sheet_id가 같으면 스킵
+        if self._initialized and hasattr(self, 'sheet_id') and self.sheet_id == sheet_id:
             return
 
-        self.sheet_id = os.getenv('GOOGLE_SHEET_ID')
+        self.sheet_id = sheet_id
         self.credentials_file = os.path.join(
             os.path.dirname(__file__),
             'credentials.json'
@@ -117,6 +121,14 @@ def Send(sheet_name: str, *data: str) -> bool:
     if not data:
         print("❌ 기록할 데이터가 없습니다.")
         return False
+
+    # .env 다시 로드 (경로 문제 해결)
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # 싱글톤 리셋 (F5 문제 해결)
+    _GoogleSheetManager._instance = None
+    _GoogleSheetManager._initialized = False
 
     # 싱글톤 인스턴스 가져오기
     manager = _GoogleSheetManager()

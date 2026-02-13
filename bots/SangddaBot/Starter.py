@@ -1,6 +1,6 @@
 """
 상따봇 (SangddaBot) - 코스닥 상한가 추적 봇
-매일 저녁 8시 1분에 코스닥 상한가 종목을 찾아 Slack으로 알림
+실행하면 코스닥 상한가 종목을 찾아 Slack으로 알림 -> 사용자가 따로 스케줄러로 매일 자동실행 시킬거임
 """
 
 import os
@@ -16,8 +16,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 # 공통 서비스 import
 from services.SlackService import slack
-from services.SimpleGoogleSheetService import SimpleGoogleSheet
-from services.DartService import get_dart
+from services.SimpleGoogleSheetService import Send
+from services.DartService.dart_service import GetDartData
+from services.KrxService.krx_simple import GetKrxWarnings
 
 # .env 파일 로드
 load_dotenv()
@@ -31,28 +32,8 @@ class SangddaBot:
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
         self.csv_path = os.path.join(self.current_dir, 'kosdaq_top_companies.csv')
         self.slack_webhook = os.getenv('SLACK_WEBHOOK')
-        self.sheet_id = os.getenv('GOOGLE_SHEET_ID_3')  # 상한가 시트 ID
+        self.sheet_id = os.getenv('GOOGLE_SHEET_ID')  # 상한가 시트 ID
         self.sheet_name = os.getenv('GOOGLE_SHEET_NAME_3', '상한가')  # 상한가 시트명 (기본값: 상한가)
-
-        # 구글 시트 서비스 초기화
-        if self.sheet_id:
-            # GoogleSheetService 폴더의 credentials.json 사용
-            cred_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                'services', 'GoogleSheetService', 'credentials.json'
-            )
-            # 환경변수에서 지정한 시트명 사용
-            self.sheet_service = SimpleGoogleSheet(
-                sheet_id=self.sheet_id,
-                credentials_file=cred_path,
-                sheet_name=self.sheet_name
-            )
-            if self.sheet_service.enabled:
-                print(f"✅ 구글 시트 연결 성공: {self.sheet_service.spreadsheet.title}")
-            else:
-                print("❌ 구글 시트 연결 실패")
-        else:
-            self.sheet_service = None
 
     def get_latest_trading_day(self):
         """최근 거래일 구하기 (저녁 8시 실행 기준)"""
@@ -144,55 +125,17 @@ class SangddaBot:
             return None
 
     def get_recent_disclosures(self, corp_name, ticker=None, days=15):
-        """특정 기업의 최근 공시 조회 (모든 공시)"""
+        """특정 기업의 최근 공시 조회 (GetDartData 사용)"""
         try:
-            # DART 서비스 초기화
-            dart = get_dart()
-
-            # 기간 설정
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
-
-            # 코스닥 전체 공시 조회 (여러 페이지)
-            all_disclosures = []
-            for page in range(1, 3):  # 2페이지까지 (200개)
-                result = dart.get_disclosures(
-                    bgn_de=start_date.strftime('%Y%m%d'),
-                    end_de=end_date.strftime('%Y%m%d'),
-                    corp_cls='K',  # 코스닥
-                    page_no=page,
-                    page_count=100
-                )
-                if result.get('status') == '000':
-                    all_disclosures.extend(result.get('list', []))
-                else:
-                    break
-
-            if not all_disclosures:
+            # 종목코드가 있으면 직접 조회
+            if ticker:
+                disclosures = GetDartData(ticker, days)
+                # 최근 3개만 반환
+                return disclosures[:3] if disclosures else []
+            else:
+                # 종목코드가 없으면 빈 리스트 반환
+                print(f"   ⚠️ {corp_name}의 종목코드가 없어 공시 조회 불가")
                 return []
-
-            # 회사명 또는 종목코드로 필터링
-            disclosures = []
-            for disc in all_disclosures:
-                disc_corp_name = disc.get('corp_name', '')
-                disc_stock_code = disc.get('stock_code', '')
-
-                # 회사명 매칭 (부분 일치) 또는 종목코드 매칭
-                matched = False
-                if ticker and disc_stock_code == ticker:
-                    matched = True
-                elif corp_name in disc_corp_name:
-                    matched = True
-
-                if matched:
-                    disclosures.append({
-                        'date': disc.get('rcept_dt', ''),
-                        'title': disc.get('report_nm', ''),
-                        'link': f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={disc.get('rcept_no', '')}"
-                    })
-
-            # 최근 3개만 반환
-            return disclosures[:3]
 
         except Exception as e:
             print(f"   ⚠️ DART 공시 조회 실패: {e}")
@@ -251,13 +194,17 @@ class SangddaBot:
                     # DART 공시 조회 (모든 공시) - 종목코드도 함께 전달
                     disclosures = self.get_recent_disclosures(name, ticker=ticker)
 
+                    # KRX 공시 조회
+                    krx_warnings = GetKrxWarnings(ticker)
+
                     limit_up_stocks.append({
                         'ticker': ticker,
                         'name': name,
                         'price': current_price,
                         'change_rate': round(change_rate, 2),
                         'history': history,
-                        'disclosures': disclosures
+                        'disclosures': disclosures,
+                        'krx_warnings': krx_warnings
                     })
 
                     print(f"   🔥 상한가 발견!")
@@ -286,34 +233,48 @@ class SangddaBot:
             # 상한가 종목은 불 이모티콘과 볼드 처리
             message += f"🔥 *{stock['name']}({stock['ticker']}) | {stock['price']:,} | +{stock['change_rate']}%*\n"
 
-            # 10거래일 이력
+            # 10거래일 이력 (상한가 날짜에 🔥 표시)
             if stock['history']:
-                history_str = " | ".join([f"D-{i+1}: {'+' if h > 0 else ''}{h}%"
-                                         for i, h in enumerate(stock['history'])])
-                message += f"└ {history_str}\n"
+                history_parts = []
+                for h in stock['history']:
+                    # 상한가(+29% 이상)인 날에 🔥 표시
+                    if h >= 29.0:
+                        history_parts.append(f"🔥+{h}%")
+                    else:
+                        history_parts.append(f"{'+' if h > 0 else ''}{h}%")
+                history_str = " | ".join(history_parts)
+                message += f"└ 📅 지난기록 :\n        {history_str}\n"
 
-            # DART 공시 정보 (모든 공시)
+            # KRX 거래소 공시 (투자주의, 단기과열 등)
+            if stock.get('krx_warnings'):
+                message += f"└ ⚠️ KRX 경고 ({len(stock['krx_warnings'])}개):\n"
+                for warning in stock['krx_warnings']:
+                    date_str = warning['date'][4:6] + '/' + warning['date'][6:8] if warning['date'] else ''
+                    message += f"        🚨 {date_str} {warning['title']}\n"
+
+            # DART 공시 정보 (최근 15일)
             if stock.get('disclosures'):
+                message += f"└ 📢 DART 공시 ({len(stock['disclosures'])}개):\n"
                 for disc in stock['disclosures']:
                     date_str = disc['date'][4:6] + '/' + disc['date'][6:8] if disc['date'] else ''
                     # 공시 종류에 따라 아이콘 구분
-                    icon = "📢"
-                    if any(keyword in disc['title'] for keyword in ["단기과열", "투자위험", "거래정지", "관리종목"]):
-                        icon = "⚠️"
-                    elif any(keyword in disc['title'] for keyword in ["실적", "매출", "계약", "수주", "공급"]):
+                    icon = "•"
+                    if any(keyword in disc['title'] for keyword in ["실적", "매출", "계약", "수주", "공급"]):
                         icon = "💰"
+                    elif any(keyword in disc['title'] for keyword in ["특수관계", "대량", "임원", "주요주주"]):
+                        icon = "👥"
 
-                    # 슬랙 웹훅은 링크를 지원하지 않으므로 텍스트와 URL을 함께 표시
-                    message += f"└ {icon} {date_str} {disc['title']}\n"
-                    if disc.get('link'):
-                        message += f"   {disc['link']}\n"
+                    # 제목 길이 제한 (50자)
+                    title = disc['title'][:50] + ('...' if len(disc['title']) > 50 else '')
+                    message += f"        {icon} {date_str} {title}\n"
+            else:
+                message += f"└ 📢 최근 15일간 DART 공시 없음\n"
 
             message += "\n"
 
         message += f"총 {len(stocks)}개 종목\n"
-        message += "※ D-1 = 직전 거래일, D-10 = 10거래일전\n\n"
+        message += "※ 지난기록 : <- 1일전 | 2일전 | 3일전...\n\n"
 
-        # 구글 시트 링크 추가 (슬랙 웹훅은 링크를 지원하지 않으므로 URL 직접 표시)
         if self.sheet_id:
             sheet_url = f"https://docs.google.com/spreadsheets/d/{self.sheet_id}"
             message += f"📊 구글 시트: {sheet_url}"
@@ -322,23 +283,11 @@ class SangddaBot:
 
     def write_to_sheet(self, stocks):
         """구글 시트에 상한가 종목 기록"""
-        if not self.sheet_service or not self.sheet_service.enabled:
-            print("⚠️ 구글 시트가 연결되지 않았습니다.")
+        if not self.sheet_id:
+            print("⚠️ 구글 시트 ID가 설정되지 않았습니다.")
             return
 
         try:
-            # "상한가" 시트 사용
-            worksheet = self.sheet_service.worksheet
-
-            # 헤더 확인 및 추가
-            all_values = worksheet.get_all_values()
-            if not all_values:
-                headers = ['날짜', '종목명', '종목코드', '종가', '등락률', 'D-1', 'D-2', 'D-3', 'D-4', 'D-5', 'D-6', 'D-7', 'D-8', 'D-9', 'D-10', '공시']
-                worksheet.append_row(headers)
-                # 헤더 굵게
-                worksheet.format('1:1', {'textFormat': {'bold': True}})
-                print(f"✅ '상한가' 시트에 헤더 추가")
-
             # 데이터 준비 및 추가
             today = datetime.now().strftime('%Y-%m-%d')
 
@@ -356,7 +305,7 @@ class SangddaBot:
                     today,
                     stock['name'],
                     stock.get('ticker', ''),
-                    stock.get('price', ''),
+                    str(stock.get('price', '')),
                     f"+{stock['change_rate']}%"
                 ]
 
@@ -371,11 +320,11 @@ class SangddaBot:
                 # 공시 정보 추가
                 data_args.append(disclosure_text)
 
-                # append_data 메서드로 가변 인자 전달
-                self.sheet_service.append_data(*data_args)
+                # Send 함수로 데이터 전달
+                Send(self.sheet_name, *data_args)
 
             if stocks:
-                print(f"✅ 구글 시트 '상한가'에 {len(stocks)}개 종목 기록 완료")
+                print(f"✅ 구글 시트 '{self.sheet_name}'에 {len(stocks)}개 종목 기록 완료")
             else:
                 print("⚠️ 기록할 상한가 종목이 없습니다.")
 

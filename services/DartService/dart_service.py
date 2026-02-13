@@ -1,250 +1,203 @@
 """
 DART 전자공시 서비스
-- 공시 조회, 재무제표 조회, 기업 정보 조회
+- 종목코드로 공시 조회
 """
 
 import os
 import requests
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any
+from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
+import zipfile
+import xml.etree.ElementTree as ET
+import io
 
 # .env 파일 로드
 load_dotenv()
 
 
-class DartService:
-    """DART OpenAPI 서비스"""
+class _DartService:
+    """DART OpenAPI 서비스 (내부 클래스)"""
 
-    def __init__(self, api_key: Optional[str] = None):
-        """
-        초기화
-
-        Args:
-            api_key: DART API 키 (없으면 환경변수에서 로드)
-        """
-        self.api_key = api_key or os.getenv('DART_API_KEY')
+    def __init__(self):
+        """초기화"""
+        self.api_key = os.getenv('DART_API_KEY')
         if not self.api_key:
             raise ValueError("DART_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
-
         self.base_url = "https://opendart.fss.or.kr/api"
+        self._corp_code_map = None  # 종목코드 -> 고유번호 매핑 캐시
 
-    def get_corp_code(self, stock_code: str) -> Optional[str]:
+    def _load_corp_codes(self) -> Dict[str, str]:
+        """전체 회사 코드 매핑 로드 (종목코드 -> 고유번호)"""
+        if self._corp_code_map is not None:
+            return self._corp_code_map
+
+        self._corp_code_map = {}
+
+        try:
+            print("📥 회사 코드 매핑 로드 중...")
+            url = f"{self.base_url}/corpCode.xml?crtfc_key={self.api_key}"
+            response = requests.get(url, timeout=30)
+
+            if response.status_code == 200:
+                # ZIP 파일 압축 해제
+                with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                    with z.open('CORPCODE.xml') as f:
+                        content = f.read()
+
+                # XML 파싱
+                root = ET.fromstring(content)
+
+                # 종목코드 -> 고유번호 매핑
+                for corp in root.findall('list'):
+                    stock_code = corp.find('stock_code').text if corp.find('stock_code') is not None else ''
+                    corp_code = corp.find('corp_code').text if corp.find('corp_code') is not None else ''
+                    corp_name = corp.find('corp_name').text if corp.find('corp_name') is not None else ''
+
+                    if stock_code and corp_code:
+                        self._corp_code_map[stock_code] = {
+                            'corp_code': corp_code,
+                            'corp_name': corp_name
+                        }
+
+                print(f"✅ {len(self._corp_code_map):,}개 회사 코드 매핑 완료")
+            else:
+                print(f"⚠️ 회사 코드 로드 실패: {response.status_code}")
+
+        except Exception as e:
+            print(f"⚠️ 회사 코드 로드 오류: {e}")
+
+        return self._corp_code_map
+
+    def _get_corp_code(self, stock_code: str) -> Optional[str]:
+        """종목코드로 고유번호 조회"""
+        corp_map = self._load_corp_codes()
+        corp_info = corp_map.get(stock_code)
+        if corp_info:
+            print(f"📌 {corp_info['corp_name']} ({stock_code}) -> corp_code: {corp_info['corp_code']}")
+            return corp_info['corp_code']
+        return None
+
+    def _get_disclosures_by_stock(
+        self,
+        stock_code: str,
+        bgn_de: str,
+        end_de: str
+    ) -> List[Dict[str, Any]]:
         """
-        종목코드로 기업코드 조회
+        종목코드로 공시 조회 (corp_code 사용)
 
         Args:
             stock_code: 종목코드 (예: '005930')
-
-        Returns:
-            기업코드 또는 None
-        """
-        # 고유번호 다운로드 및 매핑 필요
-        # 실제 구현에서는 corpCode.xml을 파싱해야 함
-        # 여기서는 간단한 매핑 예시
-        corp_mapping = {
-            '187660': '00187660',  # 현대ADM 예시
-            '005930': '00126380',  # 삼성전자 예시
-        }
-        return corp_mapping.get(stock_code)
-
-    def get_disclosures(
-        self,
-        corp_code: Optional[str] = None,
-        bgn_de: Optional[str] = None,
-        end_de: Optional[str] = None,
-        last_reprt_at: str = 'N',
-        pblntf_ty: Optional[str] = None,
-        pblntf_detail_ty: Optional[str] = None,
-        corp_cls: Optional[str] = None,
-        sort: str = 'date',
-        sort_mth: str = 'desc',
-        page_no: int = 1,
-        page_count: int = 10
-    ) -> Dict[str, Any]:
-        """
-        공시 검색
-
-        Args:
-            corp_code: 기업코드
             bgn_de: 시작일 (YYYYMMDD)
             end_de: 종료일 (YYYYMMDD)
-            last_reprt_at: 최종보고서 여부
-            pblntf_ty: 공시유형 (A:정기공시, B:주요사항보고, C:발행공시, D:지분공시 등)
-            pblntf_detail_ty: 공시상세유형
-            corp_cls: 법인구분 (Y:유가증권, K:코스닥, N:코넥스, E:기타)
-            sort: 정렬 (date:날짜, crp:회사명, rpt:보고서명)
-            sort_mth: 정렬방법 (asc:오름차순, desc:내림차순)
-            page_no: 페이지 번호
-            page_count: 페이지당 건수
 
         Returns:
             공시 목록
         """
-        url = f"{self.base_url}/list.json"
-
-        params = {
-            'crtfc_key': self.api_key,
-            'page_no': page_no,
-            'page_count': page_count,
-            'sort': sort,
-            'sort_mth': sort_mth
-        }
-
-        # 선택적 파라미터 추가
-        if corp_code:
-            params['corp_code'] = corp_code
-        if bgn_de:
-            params['bgn_de'] = bgn_de
-        if end_de:
-            params['end_de'] = end_de
-        if last_reprt_at:
-            params['last_reprt_at'] = last_reprt_at
-        if pblntf_ty:
-            params['pblntf_ty'] = pblntf_ty
-        if pblntf_detail_ty:
-            params['pblntf_detail_ty'] = pblntf_detail_ty
-        if corp_cls:
-            params['corp_cls'] = corp_cls
-
-        try:
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"❌ DART API 오류: {e}")
-            return {'status': '013', 'message': str(e), 'list': []}
-
-    def get_today_disclosures(
-        self,
-        corp_cls: Optional[str] = 'K',  # 코스닥
-        pblntf_ty: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        오늘의 공시 조회
-
-        Args:
-            corp_cls: 법인구분 (K:코스닥)
-            pblntf_ty: 공시유형
-
-        Returns:
-            오늘 공시 목록
-        """
-        today = datetime.now().strftime('%Y%m%d')
-
-        result = self.get_disclosures(
-            bgn_de=today,
-            end_de=today,
-            corp_cls=corp_cls,
-            pblntf_ty=pblntf_ty,
-            page_count=100
-        )
-
-        if result.get('status') == '000':
-            return result.get('list', [])
-        return []
-
-    def search_keyword_disclosures(
-        self,
-        keyword: str,
-        days_back: int = 7,
-        corp_cls: Optional[str] = 'K'
-    ) -> List[Dict[str, Any]]:
-        """
-        키워드로 공시 검색
-
-        Args:
-            keyword: 검색 키워드 (예: '단기과열', '상한가')
-            days_back: 검색 기간 (일)
-            corp_cls: 법인구분
-
-        Returns:
-            키워드가 포함된 공시 목록
-        """
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
-
-        result = self.get_disclosures(
-            bgn_de=start_date.strftime('%Y%m%d'),
-            end_de=end_date.strftime('%Y%m%d'),
-            corp_cls=corp_cls,
-            page_count=100
-        )
-
-        if result.get('status') != '000':
+        # 종목코드를 고유번호로 변환
+        corp_code = self._get_corp_code(stock_code)
+        if not corp_code:
+            print(f"⚠️ 종목코드 {stock_code}에 대한 회사 정보를 찾을 수 없습니다.")
             return []
 
-        # 키워드 필터링
+        url = f"{self.base_url}/list.json"
         filtered = []
-        for disclosure in result.get('list', []):
-            if keyword in disclosure.get('report_nm', ''):
-                filtered.append(disclosure)
 
-        return filtered
+        try:
+            params = {
+                'crtfc_key': self.api_key,
+                'corp_code': corp_code,  # corp_code 사용
+                'bgn_de': bgn_de,
+                'end_de': end_de,
+                'page_no': 1,
+                'page_count': 100,
+                'sort': 'date',
+                'sort_mth': 'desc'
+            }
 
-    def get_overheat_warnings(self) -> List[Dict[str, Any]]:
-        """
-        단기과열종목 예고 공시 조회
+            print(f"\n{'='*60}")
+            print(f"📡 DART API 공시 조회")
+            print(f"종목코드: {stock_code} -> 고유번호: {corp_code}")
+            print(f"조회 기간: {bgn_de} ~ {end_de}")
+            print(f"{'='*60}\n")
 
-        Returns:
-            단기과열종목 관련 공시 목록
-        """
-        return self.search_keyword_disclosures('단기과열', days_back=3)
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            result = response.json()
 
-    def format_disclosure(self, disclosure: Dict[str, Any]) -> str:
-        """
-        공시 정보를 읽기 쉽게 포맷팅
+            if result.get('status') != '000':
+                print(f"⚠️ DART API 상태: {result.get('status')} - {result.get('message', '')}")
+                return []
 
-        Args:
-            disclosure: 공시 정보
+            all_disclosures = result.get('list', [])
 
-        Returns:
-            포맷팅된 문자열
-        """
-        return (
-            f"📋 {disclosure.get('corp_name', '미상')} ({disclosure.get('stock_code', '')})\n"
-            f"   제목: {disclosure.get('report_nm', '')}\n"
-            f"   제출: {disclosure.get('rcept_dt', '')}\n"
-            f"   링크: https://dart.fss.or.kr/dsaf001/main.do?rcpNo={disclosure.get('rcept_no', '')}"
-        )
+            if not all_disclosures:
+                print(f"⚠️ 해당 기간에 공시가 없습니다.")
+                return []
+
+            print(f"✅ {len(all_disclosures)}개 공시 발견")
+
+            # 공시 정보 변환
+            for disc in all_disclosures:
+                filtered.append({
+                    'date': disc.get('rcept_dt', ''),
+                    'title': disc.get('report_nm', ''),
+                    'link': f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={disc.get('rcept_no', '')}"
+                })
+
+            return filtered
+
+        except Exception as e:
+            print(f"❌ DART API 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 
 # 싱글톤 인스턴스
 _dart_instance = None
 
 
-def get_dart(api_key: Optional[str] = None) -> DartService:
-    """
-    DART 서비스 싱글톤 인스턴스 반환
-
-    Args:
-        api_key: DART API 키
-
-    Returns:
-        DartService 인스턴스
-    """
+def _get_dart() -> _DartService:
+    """DART 서비스 싱글톤 인스턴스 반환"""
     global _dart_instance
     if _dart_instance is None:
-        _dart_instance = DartService(api_key)
+        _dart_instance = _DartService()
     return _dart_instance
 
 
-# 간편 함수들
-def get_disclosures(**kwargs) -> Dict[str, Any]:
-    """공시 검색"""
-    return get_dart().get_disclosures(**kwargs)
+def GetDartData(stock_code: str, days: int = 7) -> List[Dict[str, Any]]:
+    """
+    종목코드로 공시 조회 (오늘 포함 N일치)
 
+    Args:
+        stock_code: 종목코드 (예: '005930')
+        days: 조회 기간 (오늘 포함, 기본 7일)
 
-def get_today_disclosures(corp_cls: Optional[str] = 'K') -> List[Dict[str, Any]]:
-    """오늘의 공시"""
-    return get_dart().get_today_disclosures(corp_cls)
+    Returns:
+        공시 목록 (date, title, link)
 
+    Example:
+        GetDartData("005930", 7)  # 삼성전자 7일치 공시
+    """
+    if not stock_code:
+        print("❌ 종목코드가 필요합니다.")
+        return []
 
-def search_keyword(keyword: str, days_back: int = 7) -> List[Dict[str, Any]]:
-    """키워드 검색"""
-    return get_dart().search_keyword_disclosures(keyword, days_back)
+    try:
+        # 날짜 계산
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days-1)
 
+        # 공시 조회
+        dart = _get_dart()
+        return dart._get_disclosures_by_stock(
+            stock_code=stock_code,
+            bgn_de=start_date.strftime('%Y%m%d'),
+            end_de=end_date.strftime('%Y%m%d')
+        )
 
-def get_overheat_warnings() -> List[Dict[str, Any]]:
-    """단기과열종목 예고"""
-    return get_dart().get_overheat_warnings()
+    except Exception as e:
+        print(f"❌ GetDartData 오류: {e}")
+        return []
