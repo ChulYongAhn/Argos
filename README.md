@@ -79,7 +79,6 @@ GOOGLE_SHEET_ID_2=another_sheet_id
 | `bots/` | Scenes |
 | `services/` | Resources |
 | `.env` | ProjectSettings |
-| `main.py` | GameManager |
 
 ---
 
