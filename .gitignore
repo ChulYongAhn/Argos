@@ -238,7 +238,6 @@ config.ini
 trading_data/
 backtest_results/
 trade_history/
-*.csv
 portfolio.json
 wallets.json
 .DS_Store
