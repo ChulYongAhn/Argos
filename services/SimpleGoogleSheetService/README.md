@@ -66,7 +66,7 @@ Send("코인거래", "ETH", "매도", "5,000,000", "0.1", "500,000원", "+3.5%")
 
 # 4. 시스템 로그
 current_time = datetime.now().strftime("%H:%M:%S")
-Send("시스템로그", current_time, "API 연결", "업비트", "성공")
+Send("시스템로그", current_time, "API 연결", "바이비트", "성공")
 ```
 
 ## 동작 방식

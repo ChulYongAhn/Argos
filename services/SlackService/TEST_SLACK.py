@@ -46,7 +46,7 @@ def test_slack_messages():
 
     time.sleep(1)
 
-    slack("🚨 [에러] 업비트 API 연결 실패 - Rate limit exceeded")
+    slack("🚨 [에러] 바이비트 API 연결 실패 - Rate limit exceeded")
     print("✅ 에러 메시지 전송")
 
     time.sleep(1)

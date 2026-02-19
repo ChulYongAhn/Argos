@@ -1,0 +1,36 @@
+# Argos Project Dependencies
+# 반드시 파이썬 3.11.14  버전을 쓸것
+# 절때 가상환경을 구축하지말것(=Conda 쓰지말것)
+
+# Data Analysis & Processing
+pandas>=1.3.0
+numpy>=1.21.0
+
+# Korean Stock Market Data
+pykrx>=1.0.0
+
+# Environment Variables
+python-dotenv>=0.19.0
+
+# Google Sheets Integration
+gspread>=5.0.0
+google-auth>=2.0.0
+google-auth-oauthlib>=0.5.0
+google-auth-httplib2>=0.1.0
+
+# HTTP Requests
+requests>=2.28.0
+
+# Slack Integration (if using slack service)
+slack-sdk>=3.0.0
+
+# XML Processing (for DART API)
+lxml>=4.9.0
+
+# Date & Time (included in standard library but listing for clarity)
+# datetime (built-in)
+
+# ObCoinBot (Bybit trading)
+ccxt>=4.5.38  # Universal crypto exchange library
+pybit>=5.0.0  # Bybit official SDK (alternative)
+pynput>=1.7.0  # Cross-platform keyboard/mouse monitoring

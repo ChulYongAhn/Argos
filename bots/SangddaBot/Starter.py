@@ -276,7 +276,7 @@ class SangddaBot:
         message += "※ 지난기록 : <- 1일전 | 2일전 | 3일전...\n\n"
 
         if self.sheet_id:
-            sheet_url = f"https://docs.google.com/spreadsheets/d/{self.sheet_id}"
+            sheet_url = f"https://docs.google.com/spreadsheets/d/161qmtgCq6mDcckqrQj9hyLhGjOTvHtzeJq53Rrry5fo/edit?gid=1538197213#gid=1538197213"
             message += f"📊 구글 시트: {sheet_url}"
 
         return message
