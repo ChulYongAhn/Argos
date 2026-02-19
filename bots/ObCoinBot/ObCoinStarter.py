@@ -29,8 +29,8 @@ class TradingConfig:
 
     # 매매 설정
     symbol: str = "BTC/USDT:USDT"  # 바이비트 선물
-    leverage: int = 5
-    position_size_percent: float = 0.1  # 총 자산의 10%
+    leverage: int = 1  # 레버리지 사용 안함 (현물과 동일)
+    position_size_percent: float = 0.9  # 총 자산의 90%
     max_positions: int = 1  # 최대 포지션 수
 
     # 타임프레임 설정 (멀티 타임프레임 분석)
