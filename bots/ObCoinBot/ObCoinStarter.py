@@ -267,6 +267,10 @@ class ObCoinBot:
         self.trade_history = []
         self.analysis_cache = {}
 
+        # 알림 제한
+        self.last_notification = {}  # 마지막 알림 시간 저장
+        self.notification_cooldown = 3600  # 같은 알림 1시간 쿨다운
+
         # 기존 포지션 동기화
         self.sync_position_from_exchange()
 
@@ -525,6 +529,19 @@ class ObCoinBot:
             balance = self.exchange.fetch_balance()
             usdt_balance = balance['USDT']['free']
 
+            # 최소 거래 금액 체크 (10 USDT)
+            if usdt_balance < 10:
+                # 1시간에 한 번만 알림
+                current_time = datetime.now()
+                last_balance_warning = self.last_notification.get('low_balance', datetime.min)
+
+                if (current_time - last_balance_warning).total_seconds() > self.notification_cooldown:
+                    self.logger.warning(f"잔고 부족: ${usdt_balance:.2f}")
+                    if self.slack:
+                        self.slack.send(f"[Argos-ObCoin] ⚠️ 잔고 부족: ${usdt_balance:.2f}")
+                    self.last_notification['low_balance'] = current_time
+                return False
+
             # 포지션 사이즈 계산
             position_size = usdt_balance * self.config.position_size_percent
             btc_amount = position_size / analysis['current_price']
@@ -666,8 +683,47 @@ class ObCoinBot:
                             self.position['stop_loss'] = new_stop
                             self.logger.info(f"트레일링 스탑 업데이트: ${new_stop:.2f}")
 
+                            # 트레일링 스탑 알림 (하루 최대 1번)
+                            current_time = datetime.now()
+                            last_trail_notify = self.last_notification.get('trailing_stop', datetime.min)
+                            if (current_time - last_trail_notify).total_seconds() > 86400:  # 24시간
+                                if self.slack:
+                                    self.slack.send(f"[Argos-ObCoin] 📈 트레일링 스탑 업데이트: ${new_stop:.2f} (PnL: +{pnl_percent:.2f}%)")
+                                self.last_notification['trailing_stop'] = current_time
+
         except Exception as e:
             self.logger.error(f"포지션 상태 확인 실패: {e}")
+
+    def send_status_report(self):
+        """정기 상태 리포트 전송 (6시간마다)"""
+        try:
+            balance = self.exchange.fetch_balance()
+            usdt_balance = balance.get('USDT', {}).get('total', 0)
+
+            status_msg = f"""
+[Argos-ObCoin] 📊 정기 상태 리포트
+
+💰 잔고: ${usdt_balance:.2f}
+📈 포지션: {'있음' if self.position else '없음'}
+"""
+
+            if self.position:
+                status_msg += f"""
+- 방향: {self.position.get('side', 'N/A')}
+- PnL: {self.position.get('pnl_percent', 0):.2f}%
+- 미실현 손익: ${self.position.get('unrealized_pnl', 0):.2f}
+"""
+
+            status_msg += f"""
+⏰ 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+✅ 봇 정상 작동 중
+"""
+
+            if self.slack:
+                self.slack.send(status_msg)
+
+        except Exception as e:
+            self.logger.error(f"상태 리포트 전송 실패: {e}")
 
     def run(self):
         """메인 실행 루프"""
@@ -676,10 +732,13 @@ class ObCoinBot:
         if self.slack:
             self.slack.send("[Argos-ObCoin] 🤖 ObCoin Bot 가동 시작")
 
+        loop_count = 0
         while True:
             try:
-                # 1. 시장 분석
-                self.logger.info("시장 분석 시작...")
+                loop_count += 1
+
+                # 1. 시장 분석 (매 루프)
+                self.logger.debug(f"루프 #{loop_count}: 시장 분석 중...")
                 analysis = self.analyze_market()
 
                 # 2. 포지션 확인
@@ -700,13 +759,20 @@ class ObCoinBot:
                         if success:
                             self.logger.info("거래 실행 성공")
                         else:
-                            self.logger.warning("거래 실행 실패")
+                            self.logger.debug("거래 실행 조건 미충족")
                 else:
-                    self.logger.info("포지션 보유 중...")
+                    self.logger.debug(f"포지션 보유 중... PnL: {self.position.get('pnl_percent', 0):.2f}%")
 
-                # 4. 대기
-                self.logger.info(f"{self.config.loop_interval}초 대기...")
-                time.sleep(self.config.loop_interval)
+                # 4. 정기 상태 리포트 (6시간마다)
+                if loop_count % 360 == 0:  # 60초 * 360 = 6시간
+                    self.send_status_report()
+
+                # 5. 대기 (debug 모드가 아니면 상세 로그 생략)
+                if not self.config.debug_mode:
+                    time.sleep(self.config.loop_interval)
+                else:
+                    self.logger.info(f"{self.config.loop_interval}초 대기...")
+                    time.sleep(self.config.loop_interval)
 
             except KeyboardInterrupt:
                 self.logger.info("사용자 중단 요청")
