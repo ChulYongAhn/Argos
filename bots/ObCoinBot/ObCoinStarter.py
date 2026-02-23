@@ -791,7 +791,7 @@ def main():
     config = TradingConfig(
         api_key=os.getenv("BYBIT_API_KEY", ""),
         api_secret=os.getenv("BYBIT_API_SECRET", ""),
-        debug_mode=True  # 테스트 모드로 시작
+        debug_mode=False  # 실거래 모드
     )
 
     # 봇 생성 및 실행
