@@ -43,9 +43,9 @@ class TradingConfig:
     trailing_stop_percent: float = 0.01  # 1% 트레일링 스탑
 
     # SMC 분석 파라미터
-    ob_min_body_ratio: float = 2.0  # 오더블럭 최소 몸통 비율
-    fvg_min_gap_size: float = 0.001  # FVG 최소 갭 크기 (0.1%)
-    min_confluence_count: int = 3  # 최소 근거 개수
+    ob_min_body_ratio: float = 1.4  # 오더블럭 최소 몸통 비율 (30% 차이면 충분)
+    fvg_min_gap_size: float = 0.0005  # FVG 최소 갭 크기 (0.05% - 작은 갭도 유효)
+    min_confluence_count: int = 3  # 최소 근거 개수 (3개 유지 - SMC 원칙 고수)
 
     # 시스템 설정
     loop_interval: int = 60  # 메인 루프 간격 (초)
