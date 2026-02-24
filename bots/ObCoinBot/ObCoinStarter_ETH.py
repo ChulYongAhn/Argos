@@ -358,7 +358,7 @@ class ObCoinBot:
                     """
 
                     if self.slack:
-                        self.slack.send(f"[Argos-ObCoin] {message}")
+                        self.slack.send(f"[Argos-ObCoin_ETH] {message}")
 
                     self.logger.info(f"포지션 복원 완료 - PnL: {self.position['pnl_percent']:.2f}%")
                 else:
@@ -539,7 +539,7 @@ class ObCoinBot:
                 if (current_time - last_balance_warning).total_seconds() > self.notification_cooldown:
                     self.logger.warning(f"잔고 부족: ${usdt_balance:.2f}")
                     if self.slack:
-                        self.slack.send(f"[Argos-ObCoin] ⚠️ 잔고 부족: ${usdt_balance:.2f}")
+                        self.slack.send(f"[Argos-ObCoin_ETH] ⚠️ 잔고 부족: ${usdt_balance:.2f}")
                     self.last_notification['low_balance'] = current_time
                 return False
 
@@ -622,7 +622,7 @@ class ObCoinBot:
             """
 
             if self.slack:
-                self.slack.send(f"[Argos-ObCoin] {message}")
+                self.slack.send(f"[Argos-ObCoin_ETH] {message}")
 
             self.logger.info(f"거래 실행 완료: {order}")
             return True
@@ -647,7 +647,7 @@ class ObCoinBot:
 
                     # 청산 알림
                     if self.slack:
-                        self.slack.send("[Argos-ObCoin] ✅ 포지션 청산 완료")
+                        self.slack.send("[Argos-ObCoin_ETH] ✅ 포지션 청산 완료\n📋 거래내역: https://docs.google.com/spreadsheets/d/161qmtgCq6mDcckqrQj9hyLhGjOTvHtzeJq53Rrry5fo/edit?gid=1185998354#gid=1185998354")
 
                 self.position = None
                 return
@@ -692,7 +692,7 @@ class ObCoinBot:
                             last_trail_notify = self.last_notification.get('trailing_stop', datetime.min)
                             if (current_time - last_trail_notify).total_seconds() > 86400:  # 24시간
                                 if self.slack:
-                                    self.slack.send(f"[Argos-ObCoin] 📈 트레일링 스탑 업데이트: ${new_stop:.2f} (PnL: +{pnl_percent:.2f}%)")
+                                    self.slack.send(f"[Argos-ObCoin_ETH] 📈 트레일링 스탑 업데이트: ${new_stop:.2f} (PnL: +{pnl_percent:.2f}%)")
                                 self.last_notification['trailing_stop'] = current_time
 
         except Exception as e:
@@ -742,7 +742,7 @@ class ObCoinBot:
             usdt_balance = balance.get('USDT', {}).get('total', 0)
 
             status_msg = f"""
-[Argos-ObCoin] 📊 정기 상태 리포트
+[Argos-ObCoin_ETH] 📊 정기 상태 리포트
 
 💰 잔고: ${usdt_balance:.2f}
 📈 포지션: {'있음' if self.position else '없음'}
@@ -771,7 +771,7 @@ class ObCoinBot:
         self.logger.info("ObCoin Bot 시작")
 
         if self.slack:
-            self.slack.send("[Argos-ObCoin] 🤖 ObCoin Bot 가동 시작")
+            self.slack.send("[Argos-ObCoin_ETH] 🤖 ObCoin Bot 가동 시작")
 
         loop_count = 0
         while True:
@@ -843,7 +843,7 @@ def main():
     except Exception as e:
         logging.error(f"봇 실행 중 오류 발생: {e}")
         if bot.slack:
-            bot.slack.send(f"[Argos-ObCoin] ❌ 봇 오류: {e}")
+            bot.slack.send(f"[Argos-ObCoin_ETH] ❌ 봇 오류: {e}")
 
 if __name__ == "__main__":
     main()
