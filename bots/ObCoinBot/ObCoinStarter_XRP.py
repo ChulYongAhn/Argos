@@ -1,5 +1,5 @@
 """
-ObCoin Trading Bot - SMC 기반 비트코인 24시간 자동매매 봇
+ObCoin Trading Bot - SMC 기반 XRP 24시간 자동매매 봇
 Based on Smart Money Concept (Order Blocks, FVG, Liquidity Sweep)
 """
 
@@ -18,6 +18,7 @@ from dataclasses import dataclass, asdict
 # 상위 디렉토리 경로 추가
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from services.SlackService.simple_slack import SimpleSlack
+from services.SimpleGoogleSheetService import Send
 
 # ==================== 설정 클래스 ====================
 @dataclass
@@ -28,9 +29,9 @@ class TradingConfig:
     api_secret: str = ""
 
     # 매매 설정
-    symbol: str = "BTC/USDT:USDT"  # 바이비트 선물
+    symbol: str = "XRP/USDT:USDT"  # 바이비트 선물
     leverage: int = 1  # 레버리지 사용 안함 (현물과 동일)
-    position_size_percent: float = 0.9  # 총 자산의 90%
+    position_size_percent: float = 0.2  # 총 자산의 90%
     max_positions: int = 1  # 최대 포지션 수
 
     # 타임프레임 설정 (멀티 타임프레임 분석)
@@ -320,7 +321,7 @@ class ObCoinBot:
 
                 # 포지션이 있는 경우
                 if pos['contracts'] > 0:
-                    self.logger.info(f"기존 포지션 발견: {pos['side']} {pos['contracts']} BTC")
+                    self.logger.info(f"기존 포지션 발견: {pos['side']} {pos['contracts']} XRP")
 
                     # 포지션 정보 복원
                     self.position = {
@@ -351,7 +352,7 @@ class ObCoinBot:
                     - 방향: {self.position['side']}
                     - 진입가: ${self.position['entry_price']:.2f}
                     - 현재가: ${self.position['mark_price']:.2f}
-                    - 수량: {self.position['size']:.4f} BTC
+                    - 수량: {self.position['size']:.4f} XRP
                     - PnL: {self.position['pnl_percent']:.2f}%
                     - 미실현 손익: ${self.position['unrealized_pnl']:.2f}
                     """
@@ -544,7 +545,7 @@ class ObCoinBot:
 
             # 포지션 사이즈 계산
             position_size = usdt_balance * self.config.position_size_percent
-            btc_amount = position_size / analysis['current_price']
+            xrp_amount = position_size / analysis['current_price']
 
             # 레버리지 설정
             self.exchange.set_leverage(self.config.leverage, self.config.symbol)
@@ -554,7 +555,7 @@ class ObCoinBot:
                 order = self.exchange.create_market_order(
                     self.config.symbol,
                     'buy',
-                    btc_amount
+                    xrp_amount
                 )
 
                 # 손절/익절 주문
@@ -562,7 +563,7 @@ class ObCoinBot:
                     self.config.symbol,
                     'stop_loss',
                     'sell',
-                    btc_amount,
+                    xrp_amount,
                     analysis['stop_loss']
                 )
 
@@ -570,7 +571,7 @@ class ObCoinBot:
                     self.config.symbol,
                     'take_profit',
                     'sell',
-                    btc_amount,
+                    xrp_amount,
                     analysis['take_profit']
                 )
 
@@ -578,7 +579,7 @@ class ObCoinBot:
                 order = self.exchange.create_market_order(
                     self.config.symbol,
                     'sell',
-                    btc_amount
+                    xrp_amount
                 )
 
                 # 손절/익절 주문
@@ -586,7 +587,7 @@ class ObCoinBot:
                     self.config.symbol,
                     'stop_loss',
                     'buy',
-                    btc_amount,
+                    xrp_amount,
                     analysis['stop_loss']
                 )
 
@@ -594,7 +595,7 @@ class ObCoinBot:
                     self.config.symbol,
                     'take_profit',
                     'buy',
-                    btc_amount,
+                    xrp_amount,
                     analysis['take_profit']
                 )
 
@@ -602,7 +603,7 @@ class ObCoinBot:
             self.position = {
                 'side': signal,
                 'entry_price': analysis['entry_price'],
-                'size': btc_amount,
+                'size': xrp_amount,
                 'stop_loss': analysis['stop_loss'],
                 'take_profit': analysis['take_profit'],
                 'timestamp': datetime.now(),
@@ -614,7 +615,7 @@ class ObCoinBot:
             🚀 **포지션 오픈**
             - 방향: {signal}
             - 진입가: ${analysis['entry_price']:.2f}
-            - 수량: {btc_amount:.4f} BTC
+            - 수량: {xrp_amount:.4f} XRP
             - 손절: ${analysis['stop_loss']:.2f}
             - 익절: ${analysis['take_profit']:.2f}
             - 근거: {', '.join(analysis.get('buy_signals', []) or analysis.get('sell_signals', []))}
@@ -640,6 +641,9 @@ class ObCoinBot:
                 # 포지션이 청산됨
                 if self.position is not None:
                     self.logger.info("포지션이 청산되었습니다")
+
+                    # 구글시트 기록
+                    self.write_trade_to_sheet()
 
                     # 청산 알림
                     if self.slack:
@@ -693,6 +697,43 @@ class ObCoinBot:
 
         except Exception as e:
             self.logger.error(f"포지션 상태 확인 실패: {e}")
+
+    def write_trade_to_sheet(self):
+        """포지션 청산 시 구글시트에 거래 내역 기록"""
+        try:
+            now = datetime.now()
+            date_str = now.strftime('%Y-%m-%d')
+            time_str = now.strftime('%H:%M:%S')
+
+            # 종목이름 추출 (XRP/USDT:USDT -> XRP)
+            symbol_name = self.config.symbol.split('/')[0]
+
+            entry_price = float(self.position.get('entry_price', 0))
+            exit_price = float(self.position.get('mark_price', 0))
+            size = float(self.position.get('size', 0))
+
+            buy_amount = entry_price * size
+            sell_amount = exit_price * size
+            fee = (buy_amount + sell_amount) * 0.00055  # 바이비트 taker 수수료 0.055%
+            profit = sell_amount - buy_amount - fee
+            profit_rate = (profit / buy_amount * 100) if buy_amount > 0 else 0
+
+            sheet_name = os.getenv('GOOGLE_SHEET_NAME_2', '코인거래')
+
+            Send(sheet_name,
+                 date_str,
+                 time_str,
+                 symbol_name,
+                 f"{buy_amount:.2f}",
+                 f"{sell_amount:.2f}",
+                 f"{fee:.2f}",
+                 f"{profit:.2f}",
+                 f"{profit_rate:.2f}%")
+
+            self.logger.info(f"구글시트 기록 완료: {symbol_name} 수익 ${profit:.2f} ({profit_rate:.2f}%)")
+
+        except Exception as e:
+            self.logger.error(f"구글시트 기록 실패: {e}")
 
     def send_status_report(self):
         """정기 상태 리포트 전송 (6시간마다)"""
