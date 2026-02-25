@@ -1,8 +1,8 @@
 {
-  "balance": 9890000,
-  "holding_qty": 0.0011404397376922884,
-  "holding_avg_price": 96405795.38422327,
-  "total_buy_amount": 110000.0,
+  "balance": 9985000,
+  "holding_qty": 0.00015770369218365456,
+  "holding_avg_price": 95067526.9069821,
+  "total_buy_amount": 15000.0,
   "is_first_candle": false,
   "total_realized_profit": 0
 }
