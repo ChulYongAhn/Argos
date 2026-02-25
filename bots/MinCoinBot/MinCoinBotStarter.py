@@ -176,7 +176,7 @@ class MinCoinBot:
 
         # 슬랙 알림
         self.slack.send(
-            f"[Argos-MinCoin] BTC {reason} | "
+            f"[Argos-MinCoinBot] BTC {reason} | "
             f"수익률: {profit_rate:+.2f}% | "
             f"수익금: {profit:+,.0f}원 | "
             f"누적실현익: {self.state['total_realized_profit']:+,.0f}원"
