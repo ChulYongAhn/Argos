@@ -13,6 +13,7 @@ from datetime import datetime
 # 상위 디렉토리 경로 추가 (services import용)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from services.SimpleGoogleSheetService import Send
+from services.SlackService.simple_slack import SimpleSlack
 
 # 현재 파일 기준 디렉토리
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +26,7 @@ class MinCoinBot:
     def __init__(self):
         self.config = self.load_config()
         self.state = self.load_state()
+        self.slack = SimpleSlack()
         self.logger = self.setup_logging()
         self.logger.info("MinCoinBot 초기화 완료")
         self.logger.info(f"설정: 봉간격={self.config['candle_interval']}분, "
@@ -170,6 +172,14 @@ class MinCoinBot:
             0, net_sell,
             self.state["balance"], self.state["balance"], 0, profit_rate,
             self.state["total_realized_profit"]
+        )
+
+        # 슬랙 알림
+        self.slack.send(
+            f"[Argos-MinCoin] BTC {reason} | "
+            f"수익률: {profit_rate:+.2f}% | "
+            f"수익금: {profit:+,.0f}원 | "
+            f"누적실현익: {self.state['total_realized_profit']:+,.0f}원"
         )
 
         # state 리셋 → 다시 첫 봉부터
