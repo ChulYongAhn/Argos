@@ -7,6 +7,9 @@
 ## 터미널 명령어
 ```
 python3 /Users/chulyong/Documents/RecentProjects/Argos/bots/MinCoinBot/MinCoinBotStarter.py
+
+python3 /Users/doil/Documents/RecentProjects/Argos/bots/MinCoinBot/MinCoinBotStarter.py
+
 ```
 
 ## 매매 로직
@@ -18,8 +21,6 @@ python3 /Users/chulyong/Documents/RecentProjects/Argos/bots/MinCoinBot/MinCoinBo
 | 매수 금액 | 5,000원 | 봉당 매수 단위 |
 | 익절 기준 | +1.5% | 평단 대비 수익률 |
 | 손절 기준 | 없음 | 평단 낮추기로 대응 |
-| EMA 단기 | 20 | 5분봉 20개 |
-| EMA 장기 | 50 | 5분봉 50개 |
 | 매수 수수료 | 0.05% | 업비트 실제 수수료 기준 |
 | 매도 수수료 | 0.05% | 업비트 실제 수수료 기준 |
 
@@ -27,18 +28,9 @@ python3 /Users/chulyong/Documents/RecentProjects/Argos/bots/MinCoinBot/MinCoinBo
 1. **첫 번째 봉** → 무조건 5,000원어치 매수
 2. **두 번째 봉부터** 매 5분봉 완성 시 판단:
    - 수익률 ≥ +1.5% AND 직전 봉이 양봉 → 전량 익절(시장가 매도) → 1번으로
-   - 직전 봉이 음봉 AND 현재가 < 평단 AND EMA20 > EMA50 → 5,000원 추가 매수
-   - 직전 봉이 음봉 AND 현재가 < 평단 AND EMA20 < EMA50 → 매수 안 함 (하락추세 경고)
+   - 직전 봉이 음봉 AND 현재가 < 평단 → 5,000원 추가 매수
    - 그 외 → 대기
 3. 매도 후 다시 1번부터 반복
-
-### EMA 판단 기준
-| EMA 상태 | 의미 | 매수 |
-|----------|------|------|
-| EMA20 > EMA50 | 상승추세 | ✅ 정상 매수 |
-| EMA20 < EMA50 | 하락추세 | ❌ 매수 안 함 |
-
-> EMA는 하락장 필터 용도로만 사용. 완벽한 하락장 감지는 불가능하므로 참고 지표로 활용.
 
 ## 가상 자금 (state.json)
 | 항목 | 초기값 | 설명 |

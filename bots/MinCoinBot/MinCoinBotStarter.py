@@ -1,5 +1,5 @@
 """
-MinCoinBot - 업비트 BTC/KRW 5분봉 + EMA 기반 가상 매매 시뮬레이션 봇
+MinCoinBot - 업비트 BTC/KRW 5분봉 기반 가상 매매 시뮬레이션 봇
 """
 
 import requests
@@ -29,9 +29,7 @@ class MinCoinBot:
         self.logger.info("MinCoinBot 초기화 완료")
         self.logger.info(f"설정: 봉간격={self.config['candle_interval']}분, "
                          f"매수금={self.config['buy_amount']:,}원, "
-                         f"익절={self.config['take_profit_rate']}%, "
-                         f"EMA단기={self.config['ema_short']}, "
-                         f"EMA장기={self.config['ema_long']}")
+                         f"익절={self.config['take_profit_rate']}%")
         self.logger.info(f"잔고: {self.state['balance']:,.0f}원")
 
     def setup_logging(self) -> logging.Logger:
@@ -67,57 +65,25 @@ class MinCoinBot:
         with open(STATE_PATH, "w") as f:
             json.dump(self.state, f, indent=2, ensure_ascii=False)
 
-    def calculate_ema(self, closes: list, period: int) -> float:
-        """EMA(지수이동평균) 계산"""
-        if len(closes) < period:
-            # 데이터 부족 시 단순평균 반환
-            return sum(closes) / len(closes)
-
-        multiplier = 2 / (period + 1)
-        # 첫 EMA = 처음 period개의 SMA
-        ema = sum(closes[:period]) / period
-        for price in closes[period:]:
-            ema = (price - ema) * multiplier + ema
-        return ema
-
     def get_candle_data(self) -> dict:
-        """업비트 API로 BTC/KRW 봉 데이터 조회 (EMA 계산용 충분한 개수)"""
-        ema_long = self.config["ema_long"]
-        # EMA 계산에 충분한 봉 개수 + 여유분
-        count = ema_long + 10
-
+        """업비트 API로 BTC/KRW 직전 봉 데이터 조회"""
         url = f"https://api.upbit.com/v1/candles/minutes/{self.config['candle_interval']}"
-        params = {"market": "KRW-BTC", "count": count}
+        params = {"market": "KRW-BTC", "count": 2}
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
-        # data[0] = 현재(진행중) 봉, data[1] = 직전(완성된) 봉, ...
-        # 시간순 정렬 (오래된 순)
-        candles = list(reversed(data))
-
+        # data[0] = 현재(진행중) 봉, data[1] = 직전(완성된) 봉
         current_price = float(data[0]["trade_price"])
-
-        # 직전 완성된 봉 정보
         prev_open = float(data[1]["opening_price"])
         prev_close = float(data[1]["trade_price"])
-        is_prev_bearish = prev_close < prev_open  # 직전 봉이 음봉인지
-        is_prev_bullish = prev_close > prev_open   # 직전 봉이 양봉인지
-
-        # EMA 계산 (완성된 봉들의 종가 사용, 현재 진행중 봉 제외)
-        completed_closes = [float(c["trade_price"]) for c in candles[:-1]]
-        ema_short = self.calculate_ema(completed_closes, self.config["ema_short"])
-        ema_long_val = self.calculate_ema(completed_closes, self.config["ema_long"])
 
         return {
             "current_price": current_price,
             "prev_open": prev_open,
             "prev_close": prev_close,
-            "is_prev_bearish": is_prev_bearish,
-            "is_prev_bullish": is_prev_bullish,
-            "ema_short": ema_short,
-            "ema_long": ema_long_val,
-            "ema_uptrend": ema_short > ema_long_val,
+            "is_prev_bearish": prev_close < prev_open,
+            "is_prev_bullish": prev_close > prev_open,
         }
 
     def calculate_profit_rate(self, current_price: float) -> float:
@@ -252,31 +218,25 @@ class MinCoinBot:
                     self.virtual_buy(current_price)
                     self.state["is_first_candle"] = False
                 else:
-                    # 두 번째 봉부터: EMA + 봉 패턴 기반 판단
+                    # 두 번째 봉부터: 봉 패턴 기반 판단
                     profit_rate = self.calculate_profit_rate(current_price)
                     avg_price = self.state["holding_avg_price"]
                     candle_type = "음봉" if candle["is_prev_bearish"] else "양봉"
-                    ema_status = "상승추세" if candle["ema_uptrend"] else "하락추세"
 
                     self.logger.info(
                         f"현재가={current_price:,.0f}원 | "
                         f"평단={avg_price:,.0f}원 | "
                         f"수익률={profit_rate:+.2f}% | "
-                        f"직전봉={candle_type} | "
-                        f"EMA20={candle['ema_short']:,.0f} vs EMA50={candle['ema_long']:,.0f} ({ema_status})"
+                        f"직전봉={candle_type}"
                     )
 
                     # 익절 조건: 수익률 ≥ +1.5% AND 직전 봉이 양봉
                     if profit_rate >= self.config["take_profit_rate"] and candle["is_prev_bullish"]:
                         self.virtual_sell(current_price, "익절")
 
-                    # 매수 조건: 직전 봉이 음봉 AND 현재가 < 평단 AND EMA20 > EMA50
-                    elif candle["is_prev_bearish"] and current_price < avg_price and candle["ema_uptrend"]:
+                    # 매수 조건: 직전 봉이 음봉 AND 현재가 < 평단
+                    elif candle["is_prev_bearish"] and current_price < avg_price:
                         self.virtual_buy(current_price)
-
-                    # 하락추세 경고: 직전 봉이 음봉 AND 현재가 < 평단 AND EMA20 < EMA50
-                    elif candle["is_prev_bearish"] and current_price < avg_price and not candle["ema_uptrend"]:
-                        self.logger.info("[대기] EMA20 < EMA50 하락추세 → 매수 안 함")
 
                     else:
                         self.logger.info("[대기] 매매 조건 미충족")
