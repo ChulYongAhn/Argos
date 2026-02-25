@@ -1,5 +1,6 @@
 """
-MinCoinBot - 업비트 BTC/KRW 5분봉 기반 가상 매매 시뮬레이션 봇
+MinCoinBot - 업비트 BTC/KRW 듀얼 타임프레임 가상 매매 시뮬레이션 봇
+매도 체크: 1분봉 / 매수 체크: 5분봉
 """
 
 import requests
@@ -29,7 +30,8 @@ class MinCoinBot:
         self.slack = SimpleSlack()
         self.logger = self.setup_logging()
         self.logger.info("MinCoinBot 초기화 완료")
-        self.logger.info(f"설정: 봉간격={self.config['candle_interval']}분, "
+        self.logger.info(f"설정: 매도체크={self.config['sell_check_interval']}분봉, "
+                         f"매수체크={self.config['buy_check_interval']}분봉, "
                          f"매수금={self.config['buy_amount']:,}원, "
                          f"익절={self.config['take_profit_rate']}%")
         self.logger.info(f"잔고: {self.state['balance']:,.0f}원")
@@ -67,9 +69,9 @@ class MinCoinBot:
         with open(STATE_PATH, "w") as f:
             json.dump(self.state, f, indent=2, ensure_ascii=False)
 
-    def get_candle_data(self) -> dict:
+    def get_candle_data(self, interval: int) -> dict:
         """업비트 API로 BTC/KRW 직전 봉 데이터 조회"""
-        url = f"https://api.upbit.com/v1/candles/minutes/{self.config['candle_interval']}"
+        url = f"https://api.upbit.com/v1/candles/minutes/{interval}"
         params = {"market": "KRW-BTC", "count": 2}
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
@@ -213,14 +215,20 @@ class MinCoinBot:
             self.logger.error(f"구글시트 기록 실패: {e}")
 
     def run(self):
-        """메인 실행 루프"""
-        interval_sec = self.config["candle_interval"] * 60
-        self.logger.info(f"MinCoinBot 시작 (매 {self.config['candle_interval']}분 봉 기준)")
+        """메인 실행 루프 (1분마다 매도 체크, 5분마다 매수 체크)"""
+        sell_interval = self.config["sell_check_interval"]
+        buy_interval = self.config["buy_check_interval"]
+        loop_count = 0
+
+        self.logger.info(f"MinCoinBot 시작 (매도체크: {sell_interval}분봉, 매수체크: {buy_interval}분봉)")
 
         while True:
             try:
-                candle = self.get_candle_data()
-                current_price = candle["current_price"]
+                loop_count += 1
+
+                # 1분봉 데이터 조회 (매도 체크용)
+                candle_1m = self.get_candle_data(sell_interval)
+                current_price = candle_1m["current_price"]
 
                 if self.state["is_first_candle"]:
                     # 첫 봉: 무조건 매수
@@ -228,31 +236,39 @@ class MinCoinBot:
                     self.virtual_buy(current_price)
                     self.state["is_first_candle"] = False
                 else:
-                    # 두 번째 봉부터: 봉 패턴 기반 판단
                     profit_rate = self.calculate_profit_rate(current_price)
                     avg_price = self.state["holding_avg_price"]
-                    candle_type = "음봉" if candle["is_prev_bearish"] else "양봉"
 
-                    self.logger.info(
-                        f"현재가={current_price:,.0f}원 | "
-                        f"평단={avg_price:,.0f}원 | "
-                        f"수익률={profit_rate:+.2f}% | "
-                        f"직전봉={candle_type}"
-                    )
-
-                    # 익절 조건: 수익률 ≥ +1.5% AND 직전 봉이 양봉
-                    if profit_rate >= self.config["take_profit_rate"] and candle["is_prev_bullish"]:
+                    # 매도 체크 (매 1분): 수익률 ≥ +1.5% AND 직전 1분봉이 양봉
+                    if profit_rate >= self.config["take_profit_rate"] and candle_1m["is_prev_bullish"]:
                         self.virtual_sell(current_price, "익절")
 
-                    # 매수 조건: 직전 봉이 음봉 AND 현재가 < 평단
-                    elif candle["is_prev_bearish"] and current_price < avg_price:
-                        self.virtual_buy(current_price)
+                    # 매수 체크 (매 5분)
+                    elif loop_count % buy_interval == 0:
+                        candle_5m = self.get_candle_data(buy_interval)
+                        candle_type = "음봉" if candle_5m["is_prev_bearish"] else "양봉"
+
+                        self.logger.info(
+                            f"[매수체크] 현재가={current_price:,.0f}원 | "
+                            f"평단={avg_price:,.0f}원 | "
+                            f"수익률={profit_rate:+.2f}% | "
+                            f"직전5분봉={candle_type}"
+                        )
+
+                        if candle_5m["is_prev_bearish"] and current_price < avg_price:
+                            self.virtual_buy(current_price)
+                        else:
+                            self.logger.info("[대기] 매수 조건 미충족")
 
                     else:
-                        self.logger.info("[대기] 매매 조건 미충족")
+                        self.logger.debug(
+                            f"현재가={current_price:,.0f}원 | "
+                            f"수익률={profit_rate:+.2f}% | "
+                            f"매수체크까지 {buy_interval - (loop_count % buy_interval)}분"
+                        )
 
                 self.save_state()
-                time.sleep(interval_sec)
+                time.sleep(sell_interval * 60)  # 1분마다 루프
 
             except KeyboardInterrupt:
                 self.logger.info("사용자 중단 (Ctrl+C)")
