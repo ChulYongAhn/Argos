@@ -1,4 +1,5 @@
 {
+  "symbols": ["BTC", "ETH", "XRP", "SOL"],
   "sell_check_interval": 1,
   "buy_check_interval": 5,
   "buy_amount": 5000,

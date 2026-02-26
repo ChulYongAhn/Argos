@@ -1,8 +1,30 @@
 {
-  "balance": 9985000,
-  "holding_qty": 0.00015770369218365456,
-  "holding_avg_price": 95067526.9069821,
-  "total_buy_amount": 15000.0,
-  "is_first_candle": false,
-  "total_realized_profit": 0
+  "balance": 9621550.319136977,
+  "total_realized_profit": 6550.3191369802535,
+  "symbols": {
+    "BTC": {
+      "holding_qty": 0.0010627128043814787,
+      "holding_avg_price": 98754338.4885455,
+      "total_buy_amount": 105000.0,
+      "is_first_candle": false
+    },
+    "ETH": {
+      "holding_qty": 0.033359172820920595,
+      "holding_avg_price": 2996177.409330671,
+      "total_buy_amount": 100000.0,
+      "is_first_candle": false
+    },
+    "XRP": {
+      "holding_qty": 43.1331832188673,
+      "holding_avg_price": 2085.5173044741086,
+      "total_buy_amount": 90000.0,
+      "is_first_candle": false
+    },
+    "SOL": {
+      "holding_qty": 0.6997558162748351,
+      "holding_avg_price": 128551.98614693529,
+      "total_buy_amount": 90000.0,
+      "is_first_candle": false
+    }
+  }
 }
