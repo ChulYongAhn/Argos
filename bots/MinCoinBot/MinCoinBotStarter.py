@@ -43,6 +43,8 @@ class MinCoinBot:
                 }
                 self.logger.info(f"새 종목 추가: {symbol}")
 
+        self.start_time = datetime.now()
+        self.start_balance = self.state["balance"]
         self.logger.info("MinCoinBot 초기화 완료")
         self.logger.info(f"종목: {', '.join(self.symbols)}")
         self.logger.info(f"설정: 매도체크={self.config['sell_check_interval']}분봉, "
@@ -211,6 +213,19 @@ class MinCoinBot:
             f"총평가액: {eval_amount:,.0f}원"
         )
 
+        # 결산 알림
+        elapsed = datetime.now() - self.start_time
+        hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
+        minutes = remainder // 60
+        net_profit = eval_amount - self.start_balance
+        net_profit_rate = (net_profit / self.start_balance) * 100
+        self.slack.send(
+            f"[민코인봇 결산]\n"
+            f"총평가: {eval_amount:,.0f}원\n"
+            f"순수익: {net_profit:+,.0f}원 ({net_profit_rate:+.2f}%)\n"
+            f"경과시간: {hours}시간 {minutes}분"
+        )
+
     def get_total_eval(self, current_price: float, current_symbol: str) -> float:
         """전체 보유 종목의 평가금액 합산 (현재 처리중인 종목은 current_price 사용)"""
         total = 0.0
@@ -302,6 +317,12 @@ class MinCoinBot:
 
         self.logger.info(f"MinCoinBot 시작 (종목: {', '.join(self.symbols)} | "
                          f"매도체크: {sell_interval}분봉, 매수체크: {buy_interval}분봉)")
+
+        self.slack.send(
+            f"[민코인봇 시작]\n"
+            f"운영금: {self.start_balance:,.0f}원\n"
+            f"시작시간: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         while True:
             try:

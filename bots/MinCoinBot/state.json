@@ -1,29 +1,29 @@
 {
-  "balance": 9621550.319136977,
+  "balance": 9531550.319136977,
   "total_realized_profit": 6550.3191369802535,
   "symbols": {
     "BTC": {
-      "holding_qty": 0.0010627128043814787,
-      "holding_avg_price": 98754338.4885455,
-      "total_buy_amount": 105000.0,
+      "holding_qty": 0.0013173759659536213,
+      "holding_avg_price": 98631676.42195654,
+      "total_buy_amount": 130000.0,
       "is_first_candle": false
     },
     "ETH": {
-      "holding_qty": 0.033359172820920595,
-      "holding_avg_price": 2996177.409330671,
-      "total_buy_amount": 100000.0,
+      "holding_qty": 0.04011654988451292,
+      "holding_avg_price": 2989788.5123541765,
+      "total_buy_amount": 120000.0,
       "is_first_candle": false
     },
     "XRP": {
-      "holding_qty": 43.1331832188673,
-      "holding_avg_price": 2085.5173044741086,
-      "total_buy_amount": 90000.0,
+      "holding_qty": 55.31871126714256,
+      "holding_avg_price": 2077.8231699022226,
+      "total_buy_amount": 115000.0,
       "is_first_candle": false
     },
     "SOL": {
-      "holding_qty": 0.6997558162748351,
-      "holding_avg_price": 128551.98614693529,
-      "total_buy_amount": 90000.0,
+      "holding_qty": 0.8568486145023471,
+      "holding_avg_price": 128313.21442219458,
+      "total_buy_amount": 110000.0,
       "is_first_candle": false
     }
   }
