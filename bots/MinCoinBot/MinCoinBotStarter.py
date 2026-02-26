@@ -319,8 +319,8 @@ class MinCoinBot:
                          f"매도체크: {sell_interval}분봉, 매수체크: {buy_interval}분봉)")
 
         self.slack.send(
-            f"[민코인봇 시작]\n"
-            f"운영금: {self.start_balance:,.0f}원\n"
+            f"[민코인봇 세션 시작]\n"
+            f"시작 운영금: {self.start_balance:,.0f}원\n"
             f"시작시간: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
